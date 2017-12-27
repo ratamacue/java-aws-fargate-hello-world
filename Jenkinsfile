@@ -6,7 +6,7 @@ node('build203') {
       checkout scm
       gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
       currentBuild.displayName = gitCommit
-      imageTag = "727586729164.dkr.ecr.us-west-1.amazonaws.com/kubernetes-demo:${gitCommit}"
+      imageTag = "727586729164.dkr.ecr.us-west-1.amazonaws.com/fargate-demo:${gitCommit}"
       mvn("install")
     }
 
@@ -18,51 +18,39 @@ node('build203') {
       def dockerLogin = aws("ecr get-login", returnStdout: true)
       sh dockerLogin
       try {
-        aws("ecr create-repository --repository-name kubernetes-demo", returnStdout: true)
+        aws("ecr create-repository --repository-name fargate-demo", returnStdout: true)
       } catch (err) {
         echo "Create repository failed. Assuming the repository exists. Continuing..."
       }
       sh "docker push ${imageTag}"
     }
 
-
-
-    stage('Kubernetes Deploy') {
-      deployBranch = false
+    stage('Fargate Deploy') {
       println("BRANCH_NAME is "+env.BRANCH_NAME)
 
       if(env.BRANCH_NAME.equals("master")){
           environment = "production"
           replicas = 2
           secretEnv = "production"
-          deployBranch = true
       } else if (env.BRANCH_NAME.startsWith("_")) {
           environment = env.BRANCH_NAME.replaceFirst("_", "lab-").toLowerCase()
-          deployBranch = true
           replicas = 1
           secretEnv = "staging"
       }
 
-
-      if (deployBranch) {
         sh(
           "ENVIRONMENT=$environment " +
           "GIT_COMMIT=$gitCommit " +
           "REPLICAS=$replicas " +
           "SECRET_ENV=$secretEnv " +
           "SVC_TYPE=LoadBalancer " +
-          "./templater.sh deployment.yaml > target/deployment.yaml"
+          "IMAGE_TAG=$imageTag"+
+          "./templater.sh fargate-task.yaml > target/fargate-task.yaml"
         )
-        kubeApply("./target/deployment.yaml")
-      }
-
+        aws("ecs create-cluster --cluster-name fargate-cluster-$environment", returnStdout: true)
+        aws("ecs register-task-definition --cli-input-json target/fargate-task.json", returnStdout: true)
+        aws("ecs create-service --cluster fargate-cluster --service-name fargate-service --task-definition sample-fargate:1 --desired-count 2 --launch-type \"FARGATE\" --network-configuration \"awsvpcConfiguration={subnets=[subnet-abcd1234],securityGroups=[sg-abcd1234]}\"", returnStdout: true)
+              
     }
-
-
-
-
-
-
-
   }
 }
