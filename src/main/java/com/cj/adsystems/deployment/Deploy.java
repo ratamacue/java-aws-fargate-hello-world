@@ -14,6 +14,13 @@ import com.amazonaws.services.ecr.model.CreateRepositoryRequest;
 import com.amazonaws.services.ecr.model.GetAuthorizationTokenRequest;
 import com.amazonaws.services.ecr.model.GetAuthorizationTokenResult;
 import com.amazonaws.services.ecr.model.RepositoryAlreadyExistsException;
+import com.amazonaws.services.ecs.AmazonECS;
+import com.amazonaws.services.ecs.AmazonECSClientBuilder;
+import com.amazonaws.services.ecs.model.Cluster;
+import com.amazonaws.services.ecs.model.ContainerDefinition;
+import com.amazonaws.services.ecs.model.CreateClusterRequest;
+import com.amazonaws.services.ecs.model.LaunchType;
+import com.amazonaws.services.ecs.model.RegisterTaskDefinitionRequest;
 import com.amazonaws.util.Base64;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.DockerCmdExecFactory;
@@ -50,13 +57,36 @@ public class Deploy {
 
 	public static void main(String[] args) throws Exception {
 		AmazonECR ecr = AmazonECRClientBuilder.standard().withRegion(AWS_REGION).build();
+		AmazonECS ecs = AmazonECSClientBuilder.standard().withRegion(AWS_REGION).build();
 		//https://stackoverflow.com/questions/40099527/pulling-image-from-amazon-ecr-using-docker-java
 		createEcrRepository(ecr);		
 		DockerClient dockerClient = setupDocker(ecr);
 	    String ecrImageName = dockerBuild(dockerClient, AWS_REGISTRY_ID, AWS_REGION, APPLICATION_NAME, DOCKER_TAG);
 		dockerPush(ecrImageName, dockerClient); 
 		
+		
+		//Here's where we begin translating the Fargate guide http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ECS_AWSCLI_Fargate.html
+		Cluster cluster = createCluster("ad-systems", ecs);
+		createTask(ecs);
+		
+		
+		
 	    logger.info("Complete.");
+	}
+
+
+	private static void createTask(AmazonECS ecs) {
+//		ContainerDefinition containerDefinition = new ContainerDefinition().wi;
+//		RegisterTaskDefinitionRequest request = new RegisterTaskDefinitionRequest().withContainerDefinitions(containerDefinitions)
+//		ecs.registerTaskDefinition(registerTaskDefinitionRequest);
+		
+	}
+
+
+	private static Cluster createCluster(String clusterName, AmazonECS ecs) {
+		CreateClusterRequest request = new CreateClusterRequest().withClusterName(clusterName);
+		return ecs.createCluster(request).getCluster();
+		
 	}
 
 
