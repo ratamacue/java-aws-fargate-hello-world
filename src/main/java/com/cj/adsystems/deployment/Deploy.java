@@ -8,10 +8,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.amazonaws.regions.Regions;
-import com.amazonaws.services.devicefarm.model.CPU;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
-import com.amazonaws.services.ec2.model.CreateVpcRequest;
 import com.amazonaws.services.ecr.AmazonECR;
 import com.amazonaws.services.ecr.AmazonECRClientBuilder;
 import com.amazonaws.services.ecr.model.AuthorizationData;
@@ -21,14 +19,25 @@ import com.amazonaws.services.ecr.model.GetAuthorizationTokenResult;
 import com.amazonaws.services.ecr.model.RepositoryAlreadyExistsException;
 import com.amazonaws.services.ecs.AmazonECS;
 import com.amazonaws.services.ecs.AmazonECSClientBuilder;
-import com.amazonaws.services.ecs.model.*;
+import com.amazonaws.services.ecs.model.AssignPublicIp;
+import com.amazonaws.services.ecs.model.AwsVpcConfiguration;
+import com.amazonaws.services.ecs.model.Cluster;
+import com.amazonaws.services.ecs.model.Compatibility;
+import com.amazonaws.services.ecs.model.ContainerDefinition;
+import com.amazonaws.services.ecs.model.CreateClusterRequest;
+import com.amazonaws.services.ecs.model.CreateServiceRequest;
+import com.amazonaws.services.ecs.model.CreateServiceResult;
+import com.amazonaws.services.ecs.model.NetworkConfiguration;
+import com.amazonaws.services.ecs.model.NetworkMode;
+import com.amazonaws.services.ecs.model.RegisterTaskDefinitionRequest;
+import com.amazonaws.services.ecs.model.TaskDefinition;
+import com.amazonaws.services.ecs.model.UpdateServiceRequest;
 import com.amazonaws.util.Base64;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.DockerCmdExecFactory;
 import com.github.dockerjava.api.model.AuthResponse;
 import com.github.dockerjava.api.model.BuildResponseItem;
 import com.github.dockerjava.api.model.Identifier;
-import com.github.dockerjava.api.model.Network;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.DockerClientConfig;
@@ -81,7 +90,12 @@ public class Deploy {
 		//Here's where we begin translating the Fargate guide http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ECS_AWSCLI_Fargate.html
 		Cluster cluster = createCluster(CLUSTER_NAME, ecs);
 		//NetworkConfiguration networkConfiguration = createNetworkConfiguration(ec2);
-		NetworkConfiguration networkConfiguration = new NetworkConfiguration().withAwsvpcConfiguration(new AwsVpcConfiguration().withSecurityGroups(VPC_SECURITY_GROUPS).withSubnets(VPC_SUBNETS));
+		NetworkConfiguration networkConfiguration = new NetworkConfiguration().withAwsvpcConfiguration(
+				new AwsVpcConfiguration()
+					.withSecurityGroups(VPC_SECURITY_GROUPS)
+					.withSubnets(VPC_SUBNETS)
+					.withAssignPublicIp(AssignPublicIp.ENABLED)
+				);
 		run(ecs, cluster, networkConfiguration, AWS_REGISTRY_ID, ecrImageName, APPLICATION_NAME, MEMORY, CPU);
 		
 		
@@ -89,19 +103,26 @@ public class Deploy {
 	    logger.info("Complete.");
 	}
 
-//	private static NetworkConfiguration createNetworkConfiguration(AmazonEC2 ec2) {
-//		ec2.createVpc(new CreateVpcRequest()..withCidrBlock("10.0.0.0/16")).getVpc();
-//	}
-
 
 	private static void run(AmazonECS ecs, Cluster cluster, NetworkConfiguration networkConfiguration, String accountId, String ecrImageName, String applicationName, Integer memory, Integer cpu) {
-		String roleARN = String.format("arn:aws:iam::%s:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS", accountId);
-		//String roleARN = String.format("arn:aws:iam::%s:role/nodes.k8s.dev.cjadsystems.com", accountId);
+		//String roleARN = String.format("arn:aws:iam::%s:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS", accountId);
+		String roleARN = String.format("arn:aws:iam::%s:role/AmazonEC2ContainerServiceforEC2", accountId);
 
 		/*
+		 * created the role AmazonEC2ContainerServiceforEC2 confusingly containing the policy AmazonEC2ContainerServiceforEC2Role
+		 */
+		
+		//http://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html
+		
+		
+		/*
+		 * http://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html
 		The deploying user needs the following role:
 		    "Effect": "Allow",
-            "Action": "sts:AssumeRole",
+            "Action": [
+	            "iam:GetRole",
+	            "iam:PassRole"
+	        ],
             "Resource": "*"
 
             Otherwise aws ecs describe-services --cluster ad-systems --services fargate-demo
@@ -125,12 +146,6 @@ public class Deploy {
 		TaskDefinition task = ecs.registerTaskDefinition(taskRequest).getTaskDefinition();
 
 
-
-
-//		CreateClusterRequest createClusterRequest = new CreateClusterRequest().withClusterName("fargate-cluster");
-
-
-
 		CreateServiceRequest createServiceRequest = new CreateServiceRequest()
 				.withCluster(cluster.getClusterName())
 				.withServiceName(applicationName)
@@ -150,14 +165,6 @@ public class Deploy {
 					.withNetworkConfiguration(networkConfiguration));
 		}
 
-
-		//aws ecs create-service
-		// -cluster fargate-cluster
-		// --service-name fargate-service
-		// --task-definition sample-fargate:1
-		// --desired-count 2
-		// --launch-type "FARGATE"
-		// --network-configuration "awsvpcConfiguration={subnets=[subnet-abcd1234],securityGroups=[sg-abcd1234]}"
 
 	}
 
