@@ -5,8 +5,7 @@ import java.io.File;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import org.eclipse.jetty.util.log.Log;
-
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ecr.AmazonECR;
 import com.amazonaws.services.ecr.AmazonECRClientBuilder;
 import com.amazonaws.services.ecr.model.AuthorizationData;
@@ -14,6 +13,7 @@ import com.amazonaws.services.ecr.model.CreateRepositoryRequest;
 import com.amazonaws.services.ecr.model.GetAuthorizationTokenRequest;
 import com.amazonaws.services.ecr.model.GetAuthorizationTokenResult;
 import com.amazonaws.services.ecr.model.RepositoryAlreadyExistsException;
+import com.amazonaws.services.s3.model.Region;
 import com.amazonaws.util.Base64;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.DockerCmdExecFactory;
@@ -29,10 +29,11 @@ import com.github.dockerjava.jaxrs.JerseyDockerCmdExecFactory;
 import com.google.common.collect.ImmutableSet;
 
 public class Deploy {
+	public static final Regions AWS_REGION = Regions.US_EAST_1;
 	public static final String APPLICATION_NAME = "fargate-demo";
 	public static final String ENVIRONMENT_NAME = "lab";
 	public static final String GIT_COMMIT = "f3ae7dd03f5e";
-	public static final String DOCKER_IMAGE_TAG = "727586729164.dkr.ecr.us-east-1.amazonaws.com/fargate-demo:"+GIT_COMMIT;
+	public static final String DOCKER_IMAGE_TAG = "727586729164.dkr.ecr."+AWS_REGION.getName()+".amazonaws.com/fargate-demo:"+GIT_COMMIT;
 	public static final File SLASH_TARGET_SLASH_CLASSES = new File(Deploy.class.getClassLoader().getResource("thisistheroot").getPath());
 	public static final File DOCKER_WORKING_DIR = SLASH_TARGET_SLASH_CLASSES.getParentFile().getParentFile().getParentFile();
 	///public static final String AWS_REGISTRY_ID="727586729164";
@@ -46,22 +47,20 @@ public class Deploy {
 	private static final Logger logger = Logger.getLogger(Deploy.class.getName());
 
 	public static void main(String[] args) throws Exception {
-		
-		logger.info(Deploy.class.getClassLoader().getResource("Dockerfile").getPath());
-		AmazonECR ecr = AmazonECRClientBuilder.defaultClient();
+		AmazonECR ecr = AmazonECRClientBuilder.standard().withRegion(AWS_REGION).build();
 		
 		//https://stackoverflow.com/questions/40099527/pulling-image-from-amazon-ecr-using-docker-java
 		
 		createEcrRepository(ecr);		
 		dockerPush(ecr); 
 	    
-	    
+	    logger.info("Complete.");
 			
 	}
 
 
 	private static void dockerPush(AmazonECR ecr) throws Exception {
-		GetAuthorizationTokenRequest tokenRequest = new GetAuthorizationTokenRequest();//.withRegistryIds(AWS_REGISTRY_ID);
+		GetAuthorizationTokenRequest tokenRequest = new GetAuthorizationTokenRequest();
 		//tokenRequest.setRegistryIds(ImmutableList.of("")); //Default registry is assumed?
 	    GetAuthorizationTokenResult getAuthTokenResult = ecr.getAuthorizationToken(tokenRequest);
 	    AuthorizationData authData = getAuthTokenResult.getAuthorizationData().get(0);
@@ -100,7 +99,7 @@ public class Deploy {
 	    
 	    logger.info("Docker Working Dir is set to "+DOCKER_WORKING_DIR);
 	    String imageId = dockerClient.buildImageCmd(DOCKER_WORKING_DIR).withTags(ImmutableSet.of(DOCKER_IMAGE_TAG)).exec(callback).awaitImageId();
-	    dockerClient.pushImageCmd(Identifier.fromCompoundString(DOCKER_IMAGE_TAG)).exec(new PushImageResultCallback()).awaitSuccess();
+	    dockerClient.pushImageCmd(Identifier.fromCompoundString(DOCKER_IMAGE_TAG)).withAuthConfig(dockerClient.authConfig()).exec(new PushImageResultCallback()).awaitSuccess();
 	}
 
 
