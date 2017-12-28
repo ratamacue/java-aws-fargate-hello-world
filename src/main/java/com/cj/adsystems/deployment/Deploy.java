@@ -14,7 +14,6 @@ import com.amazonaws.services.ecr.model.CreateRepositoryRequest;
 import com.amazonaws.services.ecr.model.GetAuthorizationTokenRequest;
 import com.amazonaws.services.ecr.model.GetAuthorizationTokenResult;
 import com.amazonaws.services.ecr.model.RepositoryAlreadyExistsException;
-import com.amazonaws.services.s3.model.Region;
 import com.amazonaws.util.Base64;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.DockerCmdExecFactory;
