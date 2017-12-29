@@ -106,8 +106,9 @@ public class Deploy {
 
 	private static void run(AmazonECS ecs, Cluster cluster, NetworkConfiguration networkConfiguration, String accountId, String ecrImageName, String applicationName, Integer memory, Integer cpu) {
 		//String roleARN = String.format("arn:aws:iam::%s:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS", accountId);
-		String roleARN = String.format("arn:aws:iam::%s:role/AmazonEC2ContainerServiceforEC2", accountId);
-
+		//String roleARN = String.format("arn:aws:iam::%s:role/AmazonEC2ContainerServiceforEC2", accountId);
+		String roleARN = String.format("arn:aws:iam::%s:role/AdSystemsFargateManagerRole", accountId);
+		
 
 		/*
 		 * created the role AmazonEC2ContainerServiceforEC2 confusingly containing the policy AmazonEC2ContainerServiceforEC2Role
@@ -125,6 +126,23 @@ public class Deploy {
 	            "iam:PassRole"
 	        ],
             "Resource": "*"
+            
+         And the roleARN needs to have the following:
+         Policies: AmazonEC2ContainerRegistryFullAccess, AmazonECS_FullAccess, AmazonEC2ContainerServiceforEC2Role, 
+         Trust Relationship: 
+			{
+				  "Version": "2012-10-17",
+				  "Statement": [
+				    {
+				      "Sid": "",
+				      "Effect": "Allow",
+				      "Principal": {
+				        "Service": "ecs-tasks.amazonaws.com"
+				      },
+				      "Action": "sts:AssumeRole"
+				    }
+				  ]
+			}
 
             Otherwise aws ecs describe-services --cluster ad-systems --services fargate-demo
             leads to error ECS was unable to assume the role
