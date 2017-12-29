@@ -108,6 +108,7 @@ public class Deploy {
 		//String roleARN = String.format("arn:aws:iam::%s:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS", accountId);
 		String roleARN = String.format("arn:aws:iam::%s:role/AmazonEC2ContainerServiceforEC2", accountId);
 
+
 		/*
 		 * created the role AmazonEC2ContainerServiceforEC2 confusingly containing the policy AmazonEC2ContainerServiceforEC2Role
 		 */
@@ -142,7 +143,8 @@ public class Deploy {
 				.withRequiresCompatibilities(Compatibility.FARGATE)
 				.withNetworkMode(NetworkMode.Awsvpc)
 				.withMemory(memory.toString())
-				.withExecutionRoleArn(roleARN);
+				.withExecutionRoleArn(roleARN)
+				.withTaskRoleArn(roleARN);
 		TaskDefinition task = ecs.registerTaskDefinition(taskRequest).getTaskDefinition();
 
 
