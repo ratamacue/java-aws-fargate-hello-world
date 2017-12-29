@@ -6,6 +6,8 @@ import java.io.UnsupportedEncodingException;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ec2.AmazonEC2;
@@ -44,7 +46,6 @@ import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.command.BuildImageResultCallback;
 import com.github.dockerjava.core.command.PushImageResultCallback;
 import com.github.dockerjava.jaxrs.JerseyDockerCmdExecFactory;
-import com.google.common.collect.ImmutableSet;
 
 public class Deploy {
 
@@ -69,8 +70,8 @@ public class Deploy {
 		String DOCKER_TAG = "deploy";
 		Integer MEMORY = 512;
 		Integer CPU = 256;
-		Set<String> VPC_SUBNETS=ImmutableSet.of("subnet-6f752a45", "subnet-361d1240", "subnet-14154d4c", "subnet-b64d718b", "subnet-d7c941db", "subnet-d5bdddb0");
-		Set<String> VPC_SECURITY_GROUPS = ImmutableSet.of("sg-a84f08d3");
+		Set<String> VPC_SUBNETS=set("subnet-6f752a45", "subnet-361d1240", "subnet-14154d4c", "subnet-b64d718b", "subnet-d7c941db", "subnet-d5bdddb0");
+		Set<String> VPC_SECURITY_GROUPS = set("sg-a84f08d3");
 		
 		//See the readme for information about these roles
 		//String roleARN = String.format("arn:aws:iam::%s:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS", accountId);
@@ -117,7 +118,7 @@ public class Deploy {
 				.withImage(ecrImageName)
 				.withName(applicationName);
 		RegisterTaskDefinitionRequest taskRequest = new RegisterTaskDefinitionRequest()
-				.withContainerDefinitions(ImmutableSet.of(containerDefinition))
+				.withContainerDefinitions(set(containerDefinition))
 				.withFamily(applicationName)
 				.withCpu(cpu.toString())
 				.withRequiresCompatibilities(Compatibility.FARGATE)
@@ -164,7 +165,6 @@ public class Deploy {
 
 
 	private static String dockerBuild(DockerClient dockerClient, File workingFolder, String awsAccountNumber, Regions region, String applicationName, String dockerTag) {
-		//final String DOCKER_IMAGE_TAG = "727586729164.dkr.ecr."+AWS_REGION.getName()+".amazonaws.com/fargate-demo:"+GIT_COMMIT;
 		String ecrImageName = String.format("%s.dkr.ecr.%s.amazonaws.com/%s:%s", awsAccountNumber, region.getName(), applicationName, dockerTag);
 		BuildImageResultCallback callback = new BuildImageResultCallback() {
 	        @Override
@@ -176,7 +176,7 @@ public class Deploy {
 	        }
 	    };
 	    
-	    dockerClient.buildImageCmd(workingFolder).withTags(ImmutableSet.of(ecrImageName)).exec(callback).awaitImageId();
+	    dockerClient.buildImageCmd(workingFolder).withTags(set(ecrImageName)).exec(callback).awaitImageId();
 	    return ecrImageName;
 	}
 
@@ -218,6 +218,11 @@ public class Deploy {
 		}catch(RepositoryAlreadyExistsException e) {
 			logger.info(String.format("Registry %s Already Exists.", applicationName));
 		}
+	}
+	
+	@SafeVarargs
+	private static <T> Set<T> set(T... elements){
+		return Stream.of(elements).collect(Collectors.toSet());
 	}
 	
 }
