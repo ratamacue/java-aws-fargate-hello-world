@@ -110,15 +110,8 @@ public class Deploy {
 		String roleARN = String.format("arn:aws:iam::%s:role/AdSystemsFargateManagerRole", accountId);
 		
 
-		/*
-		 * created the role AmazonEC2ContainerServiceforEC2 confusingly containing the policy AmazonEC2ContainerServiceforEC2Role
-		 */
-		
-		//http://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html
-		
 		
 		/*
-		 * http://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_passrole.html
 		The deploying user needs the following role:
 		    "Effect": "Allow",
             "Action": [
@@ -153,7 +146,6 @@ public class Deploy {
 		ContainerDefinition containerDefinition = new ContainerDefinition()
 				.withImage(ecrImageName)
 				.withName(applicationName);
-				//.withMemory(memory);
 		RegisterTaskDefinitionRequest taskRequest = new RegisterTaskDefinitionRequest()
 				.withContainerDefinitions(ImmutableSet.of(containerDefinition))
 				.withFamily(applicationName)
