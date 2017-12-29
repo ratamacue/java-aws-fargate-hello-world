@@ -71,6 +71,12 @@ public class Deploy {
 		Integer CPU = 256;
 		Set<String> VPC_SUBNETS=ImmutableSet.of("subnet-6f752a45", "subnet-361d1240", "subnet-14154d4c", "subnet-b64d718b", "subnet-d7c941db", "subnet-d5bdddb0");
 		Set<String> VPC_SECURITY_GROUPS = ImmutableSet.of("sg-a84f08d3");
+		
+		//See the readme for information about these roles
+		//String roleARN = String.format("arn:aws:iam::%s:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS", accountId);
+		//String roleARN = String.format("arn:aws:iam::%s:role/AmazonEC2ContainerServiceforEC2", accountId);
+		String roleARN = String.format("arn:aws:iam::%s:role/AdSystemsFargateManagerRole", AWS_REGISTRY_ID);
+		
 
 		/*
 		 * End Configuration Options
@@ -96,7 +102,7 @@ public class Deploy {
 					.withSubnets(VPC_SUBNETS)
 					.withAssignPublicIp(AssignPublicIp.ENABLED)
 				);
-		run(ecs, cluster, networkConfiguration, AWS_REGISTRY_ID, ecrImageName, APPLICATION_NAME, MEMORY, CPU);
+		run(ecs, cluster, networkConfiguration, AWS_REGISTRY_ID, roleARN, ecrImageName, APPLICATION_NAME, MEMORY, CPU);
 		
 		
 		
@@ -104,44 +110,8 @@ public class Deploy {
 	}
 
 
-	private static void run(AmazonECS ecs, Cluster cluster, NetworkConfiguration networkConfiguration, String accountId, String ecrImageName, String applicationName, Integer memory, Integer cpu) {
-		//String roleARN = String.format("arn:aws:iam::%s:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS", accountId);
-		//String roleARN = String.format("arn:aws:iam::%s:role/AmazonEC2ContainerServiceforEC2", accountId);
-		String roleARN = String.format("arn:aws:iam::%s:role/AdSystemsFargateManagerRole", accountId);
+	private static void run(AmazonECS ecs, Cluster cluster, NetworkConfiguration networkConfiguration, String accountId, String roleArn, String ecrImageName, String applicationName, Integer memory, Integer cpu) {
 		
-
-		
-		/*
-		The deploying user needs the following role:
-		    "Effect": "Allow",
-            "Action": [
-	            "iam:GetRole",
-	            "iam:PassRole"
-	        ],
-            "Resource": "*"
-            
-         And the roleARN needs to have the following:
-         Policies: AmazonEC2ContainerRegistryFullAccess, AmazonECS_FullAccess, AmazonEC2ContainerServiceforEC2Role, 
-         Trust Relationship: 
-			{
-				  "Version": "2012-10-17",
-				  "Statement": [
-				    {
-				      "Sid": "",
-				      "Effect": "Allow",
-				      "Principal": {
-				        "Service": "ecs-tasks.amazonaws.com"
-				      },
-				      "Action": "sts:AssumeRole"
-				    }
-				  ]
-			}
-
-            Otherwise aws ecs describe-services --cluster ad-systems --services fargate-demo
-            leads to error ECS was unable to assume the role
-		 */
-
-
 
 		ContainerDefinition containerDefinition = new ContainerDefinition()
 				.withImage(ecrImageName)
@@ -153,8 +123,8 @@ public class Deploy {
 				.withRequiresCompatibilities(Compatibility.FARGATE)
 				.withNetworkMode(NetworkMode.Awsvpc)
 				.withMemory(memory.toString())
-				.withExecutionRoleArn(roleARN)
-				.withTaskRoleArn(roleARN);
+				.withExecutionRoleArn(roleArn)
+				.withTaskRoleArn(roleArn);
 		TaskDefinition task = ecs.registerTaskDefinition(taskRequest).getTaskDefinition();
 
 
