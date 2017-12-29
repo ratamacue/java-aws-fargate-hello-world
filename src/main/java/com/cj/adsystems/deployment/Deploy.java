@@ -3,15 +3,16 @@ package com.cj.adsystems.deployment;
 
 import java.io.File;
 import java.io.UnsupportedEncodingException;
+import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.jetty.util.log.Log;
+
 import com.amazonaws.regions.Regions;
-import com.amazonaws.services.ec2.AmazonEC2;
-import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ecr.AmazonECR;
 import com.amazonaws.services.ecr.AmazonECRClientBuilder;
 import com.amazonaws.services.ecr.model.AuthorizationData;
@@ -28,12 +29,27 @@ import com.amazonaws.services.ecs.model.Compatibility;
 import com.amazonaws.services.ecs.model.ContainerDefinition;
 import com.amazonaws.services.ecs.model.CreateClusterRequest;
 import com.amazonaws.services.ecs.model.CreateServiceRequest;
-import com.amazonaws.services.ecs.model.CreateServiceResult;
+import com.amazonaws.services.ecs.model.LoadBalancer;
 import com.amazonaws.services.ecs.model.NetworkConfiguration;
 import com.amazonaws.services.ecs.model.NetworkMode;
+import com.amazonaws.services.ecs.model.PortMapping;
 import com.amazonaws.services.ecs.model.RegisterTaskDefinitionRequest;
 import com.amazonaws.services.ecs.model.TaskDefinition;
 import com.amazonaws.services.ecs.model.UpdateServiceRequest;
+import com.amazonaws.services.elasticloadbalancingv2.AmazonElasticLoadBalancing;
+import com.amazonaws.services.elasticloadbalancingv2.AmazonElasticLoadBalancingClientBuilder;
+import com.amazonaws.services.elasticloadbalancingv2.model.Action;
+import com.amazonaws.services.elasticloadbalancingv2.model.ActionTypeEnum;
+import com.amazonaws.services.elasticloadbalancingv2.model.CreateListenerRequest;
+import com.amazonaws.services.elasticloadbalancingv2.model.CreateLoadBalancerRequest;
+import com.amazonaws.services.elasticloadbalancingv2.model.CreateLoadBalancerResult;
+import com.amazonaws.services.elasticloadbalancingv2.model.CreateTargetGroupRequest;
+import com.amazonaws.services.elasticloadbalancingv2.model.CreateTargetGroupResult;
+import com.amazonaws.services.elasticloadbalancingv2.model.LoadBalancerTypeEnum;
+import com.amazonaws.services.elasticloadbalancingv2.model.ProtocolEnum;
+import com.amazonaws.services.elasticloadbalancingv2.model.RegisterTargetsRequest;
+import com.amazonaws.services.elasticloadbalancingv2.model.TargetDescription;
+import com.amazonaws.services.elasticloadbalancingv2.model.TargetTypeEnum;
 import com.amazonaws.util.Base64;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.DockerCmdExecFactory;
@@ -72,6 +88,7 @@ public class Deploy {
 		Integer CPU = 256;
 		Set<String> VPC_SUBNETS=set("subnet-6f752a45", "subnet-361d1240", "subnet-14154d4c", "subnet-b64d718b", "subnet-d7c941db", "subnet-d5bdddb0");
 		Set<String> VPC_SECURITY_GROUPS = set("sg-a84f08d3");
+		Integer PORT = 8080;
 		
 		//See the readme for information about these roles
 		//String roleARN = String.format("arn:aws:iam::%s:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS", accountId);
@@ -86,7 +103,8 @@ public class Deploy {
 
 		AmazonECR ecr = AmazonECRClientBuilder.standard().withRegion(AWS_REGION).build();
 		AmazonECS ecs = AmazonECSClientBuilder.standard().withRegion(AWS_REGION).build();
-		AmazonEC2 ec2 = AmazonEC2ClientBuilder.standard().withRegion(AWS_REGION).build();
+		AmazonElasticLoadBalancing elb = AmazonElasticLoadBalancingClientBuilder.standard().withRegion(AWS_REGION).build();
+
 		//https://stackoverflow.com/questions/40099527/pulling-image-from-amazon-ecr-using-docker-java
 		createEcrRepository(ecr, APPLICATION_NAME);
 		DockerClient dockerClient = setupDocker(ecr);
@@ -101,9 +119,27 @@ public class Deploy {
 				new AwsVpcConfiguration()
 					.withSecurityGroups(VPC_SECURITY_GROUPS)
 					.withSubnets(VPC_SUBNETS)
-					.withAssignPublicIp(AssignPublicIp.ENABLED)
+					.withAssignPublicIp(AssignPublicIp.DISABLED)
 				);
-		run(ecs, cluster, networkConfiguration, AWS_REGISTRY_ID, roleARN, ecrImageName, APPLICATION_NAME, MEMORY, CPU);
+		
+		
+		String targetGroupARN = createLoadBalancer(elb, APPLICATION_NAME, VPC_SUBNETS, VPC_SECURITY_GROUPS, PORT);
+		
+		/**
+		 For Application Load Balancers and Network Load Balancers, this object must contain the load balancer target group ARN, the container name (as it appears in a container definition), 
+		 and the container port to access from the load balancer. When a task from this service is placed on a container instance, the container instance and port combination is
+		  registered as a target in the target group specified here.
+		 */
+		LoadBalancer balancer = new LoadBalancer()
+				//.withLoadBalancerName(APPLICATION_NAME)
+				.withContainerName(APPLICATION_NAME)
+				.withTargetGroupArn(targetGroupARN)
+				.withContainerPort(PORT);
+		
+		
+		
+		
+		run(ecs, cluster, networkConfiguration, balancer, AWS_REGISTRY_ID, roleARN, ecrImageName, APPLICATION_NAME, PORT, MEMORY, CPU);
 		
 		
 		
@@ -111,12 +147,64 @@ public class Deploy {
 	}
 
 
-	private static void run(AmazonECS ecs, Cluster cluster, NetworkConfiguration networkConfiguration, String accountId, String roleArn, String ecrImageName, String applicationName, Integer memory, Integer cpu) {
+	private static String createLoadBalancer(AmazonElasticLoadBalancing elb, String name, Set<String> subnets, Set<String> securityGroups, Integer port) throws InterruptedException {
+		CreateLoadBalancerRequest lbRequest = new CreateLoadBalancerRequest()
+				.withName(name)
+				.withSecurityGroups(securityGroups)
+				.withType(LoadBalancerTypeEnum.Application)
+				//.withListeners(new Listener("http", balancer.getContainerPort(), balancer.getContainerPort()))
+				.withSubnets(subnets);
+		
+		CreateLoadBalancerResult result = elb.createLoadBalancer(lbRequest);
+		if(result.getLoadBalancers().size() !=1) throw new RuntimeException("Expected exactly one load balancer to be created here.");
+		
+
+		String loadBalancerArn = result.getLoadBalancers().get(0).getLoadBalancerArn();
+		String vpcId = result.getLoadBalancers().get(0).getVpcId();
+		
+		CreateTargetGroupResult targetGroupResult = elb.createTargetGroup(new CreateTargetGroupRequest()
+				.withName(name)
+				.withProtocol(ProtocolEnum.HTTP)
+				.withPort(port)
+				.withVpcId(vpcId)
+				.withTargetType(TargetTypeEnum.Ip)
+				);
+		
+		if(targetGroupResult.getTargetGroups().size() != 1) throw new RuntimeException("Expected exactly one targetgroup to be created here.");
+		
+		String targetGroupArn = targetGroupResult.getTargetGroups().get(0).getTargetGroupArn();
+		
+		elb.createListener(new CreateListenerRequest().withLoadBalancerArn(loadBalancerArn).withPort(port).withProtocol(ProtocolEnum.HTTP).withDefaultActions(new Action().withTargetGroupArn(targetGroupArn).withType(ActionTypeEnum.Forward)));
+		
+		
+		//elb.registerTargets(new RegisterTargetsRequest().withTargetGroupArn(targetGroupArn).withTargets(new TargetDescription().withAvailabilityZone("all").withId("WTF")));
+		
+		
+		
+		return targetGroupArn;
+		
+		
+		
+//		DescribeLoadBalancersRequest request = new DescribeLoadBalancersRequest().withLoadBalancerNames(applicationName);
+//		DescribeLoadBalancersResult response = elb.describeLoadBalancers(request);
+//		
+//		List<LoadBalancerDescription> lbs = response.getLoadBalancerDescriptions();
+//		if(lbs.size()!=1) throw new RuntimeException(String.format("There should be exactly one load balancer with the name %s, but there were %s", applicationName, lbs.size()));
+//		LoadBalancerDescription lbd = lbs.get(0);
+		
+		//return new LoadBalancer().setContainerPort(lbd.);;
+		
+
+	}
+
+
+	private static void run(AmazonECS ecs, Cluster cluster, NetworkConfiguration networkConfiguration, LoadBalancer balancers, String accountId, String roleArn, String ecrImageName, String applicationName, Integer port, Integer memory, Integer cpu) {
 		
 
 		ContainerDefinition containerDefinition = new ContainerDefinition()
 				.withImage(ecrImageName)
-				.withName(applicationName);
+				.withName(applicationName)
+				.withPortMappings(set(new PortMapping().withContainerPort(port)));
 		RegisterTaskDefinitionRequest taskRequest = new RegisterTaskDefinitionRequest()
 				.withContainerDefinitions(set(containerDefinition))
 				.withFamily(applicationName)
@@ -128,18 +216,18 @@ public class Deploy {
 				.withTaskRoleArn(roleArn);
 		TaskDefinition task = ecs.registerTaskDefinition(taskRequest).getTaskDefinition();
 
-
-		CreateServiceRequest createServiceRequest = new CreateServiceRequest()
-				.withCluster(cluster.getClusterName())
-				.withServiceName(applicationName)
-				.withTaskDefinition(task.getTaskDefinitionArn())
-				.withDesiredCount(2)
-				.withLaunchType("FARGATE")
-				.withNetworkConfiguration(networkConfiguration);
 		try {
-			CreateServiceResult createServiceResult = ecs.createService(createServiceRequest);
+			ecs.createService(new CreateServiceRequest()
+					.withCluster(cluster.getClusterName())
+					.withServiceName(applicationName)
+					.withTaskDefinition(task.getTaskDefinitionArn())
+					.withDesiredCount(2)
+					.withLaunchType("FARGATE")
+					.withNetworkConfiguration(networkConfiguration)
+					.withLoadBalancers(balancers)); //I'm not sure how to 
 		}catch(Exception e){
 			//Assume that the service already exists.  Attempt to update it.
+			logger.log(Level.INFO, "Failed to create service, attempting to update instead.  If this works, you can ignore this error.", e);
 			ecs.updateService(new UpdateServiceRequest()
 					.withCluster(cluster.getClusterName())
 					.withService(applicationName)
@@ -147,7 +235,6 @@ public class Deploy {
 					.withDesiredCount(2)
 					.withNetworkConfiguration(networkConfiguration));
 		}
-
 
 	}
 
