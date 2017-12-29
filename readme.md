@@ -4,8 +4,10 @@ This is a very simple java project that will deploy a "Hello World" Java Webapp 
 # Roles
 
 The roleARN is the role that ECS will assume to be able to start EC2 instances for you.  It needs to have the following:
-Policy: AmazonEC2ContainerServiceforEC2Role
-Trust Relationship: 
+
+1. Policy: AmazonEC2ContainerServiceforEC2Role
+1. Trust Relationship
+
 ```
 {
   "Version": "2012-10-17",
