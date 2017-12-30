@@ -13,6 +13,14 @@ import java.util.stream.Stream;
 import org.eclipse.jetty.util.log.Log;
 
 import com.amazonaws.regions.Regions;
+import com.amazonaws.services.ec2.AmazonEC2;
+import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
+import com.amazonaws.services.ec2.model.AuthorizeSecurityGroupEgressRequest;
+import com.amazonaws.services.ec2.model.AuthorizeSecurityGroupIngressRequest;
+import com.amazonaws.services.ec2.model.CreateSecurityGroupRequest;
+import com.amazonaws.services.ec2.model.DescribeSecurityGroupsRequest;
+import com.amazonaws.services.ec2.model.IpPermission;
+import com.amazonaws.services.ec2.model.SecurityGroup;
 import com.amazonaws.services.ecr.AmazonECR;
 import com.amazonaws.services.ecr.AmazonECRClientBuilder;
 import com.amazonaws.services.ecr.model.AuthorizationData;
@@ -87,7 +95,7 @@ public class Deploy {
 		Integer MEMORY = 512;
 		Integer CPU = 256;
 		Set<String> VPC_SUBNETS=set("subnet-6f752a45", "subnet-361d1240", "subnet-14154d4c", "subnet-b64d718b", "subnet-d7c941db", "subnet-d5bdddb0");
-		Set<String> VPC_SECURITY_GROUPS = set("sg-8aa662fe");//set("sg-a84f08d3");
+		//Set<String> VPC_SECURITY_GROUPS = set("sg-8aa662fe");//set("sg-a84f08d3");
 		Integer PORT = 8080;
 		
 		//See the readme for information about these roles
@@ -103,6 +111,7 @@ public class Deploy {
 
 		AmazonECR ecr = AmazonECRClientBuilder.standard().withRegion(AWS_REGION).build();
 		AmazonECS ecs = AmazonECSClientBuilder.standard().withRegion(AWS_REGION).build();
+		AmazonEC2 ec2 = AmazonEC2ClientBuilder.standard().withRegion(AWS_REGION).build();
 		AmazonElasticLoadBalancing elb = AmazonElasticLoadBalancingClientBuilder.standard().withRegion(AWS_REGION).build();
 
 		//https://stackoverflow.com/questions/40099527/pulling-image-from-amazon-ecr-using-docker-java
@@ -114,16 +123,20 @@ public class Deploy {
 		
 		//Here's where we begin translating the Fargate guide http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ECS_AWSCLI_Fargate.html
 		Cluster cluster = createCluster(CLUSTER_NAME, ecs);
+		
+		String securityGroup = createSecurityGroup(ec2, APPLICATION_NAME);
+		
+		
 		//NetworkConfiguration networkConfiguration = createNetworkConfiguration(ec2);
 		NetworkConfiguration networkConfiguration = new NetworkConfiguration().withAwsvpcConfiguration(
 				new AwsVpcConfiguration()
-					.withSecurityGroups(VPC_SECURITY_GROUPS)
+					.withSecurityGroups(securityGroup)
 					.withSubnets(VPC_SUBNETS)
 					.withAssignPublicIp(AssignPublicIp.ENABLED) //Crashloops without proper internet NAT set up?
 				);
 		
 		
-		String targetGroupARN = createLoadBalancer(elb, APPLICATION_NAME, VPC_SUBNETS, VPC_SECURITY_GROUPS, PORT);
+		String targetGroupARN = createLoadBalancer(elb, APPLICATION_NAME, VPC_SUBNETS, securityGroup, PORT);
 		
 		/**
 		 For Application Load Balancers and Network Load Balancers, this object must contain the load balancer target group ARN, the container name (as it appears in a container definition), 
@@ -137,8 +150,6 @@ public class Deploy {
 				.withContainerPort(PORT);
 		
 		
-		
-		
 		run(ecs, cluster, networkConfiguration, balancer, AWS_REGISTRY_ID, roleARN, ecrImageName, APPLICATION_NAME, PORT, MEMORY, CPU);
 		
 		
@@ -147,7 +158,36 @@ public class Deploy {
 	}
 
 
-	private static String createLoadBalancer(AmazonElasticLoadBalancing elb, String name, Set<String> subnets, Set<String> securityGroups, Integer port) throws InterruptedException {
+	private static String createSecurityGroup(AmazonEC2 ec2, String securityGroupName) {
+		String groupId;
+		try {
+			groupId = ec2.createSecurityGroup(new CreateSecurityGroupRequest().withGroupName(securityGroupName).withDescription(securityGroupName)).getGroupId();
+			logger.log(Level.WARNING,"Created a new security group "+securityGroupName, new RuntimeException("Just A Stack Trace"));
+
+		}catch(Exception e) {
+			List<SecurityGroup> groups = ec2.describeSecurityGroups(new DescribeSecurityGroupsRequest().withGroupNames(securityGroupName)).getSecurityGroups();
+			if(groups.size()!=1) throw new RuntimeException("Error finding security group "+securityGroupName);
+			groupId=groups.get(0).getGroupId();
+		}
+		
+		
+		try{
+			ec2.authorizeSecurityGroupEgress(new AuthorizeSecurityGroupEgressRequest().withIpPermissions(new IpPermission().withIpProtocol("-1")).withGroupId(groupId));		
+		}catch (Exception e) {
+			logger.info("Unable to set up egress, may already have been done.");
+		}
+		
+		try {
+			ec2.authorizeSecurityGroupIngress(new AuthorizeSecurityGroupIngressRequest().withGroupId(groupId).withIpProtocol("-1").withCidrIp("0.0.0.0/0"));
+		}catch (Exception e) {
+			logger.info("Unable to set up ingress, may already have been done.");
+		}
+		
+		return groupId;
+	}
+
+
+	private static String createLoadBalancer(AmazonElasticLoadBalancing elb, String name, Set<String> subnets, String securityGroups, Integer port) throws InterruptedException {
 		CreateLoadBalancerRequest lbRequest = new CreateLoadBalancerRequest()
 				.withName(name)
 				.withSecurityGroups(securityGroups) //CRASHLOOP?
@@ -161,7 +201,9 @@ public class Deploy {
 		if(result.getLoadBalancers().size() !=1) throw new RuntimeException("Expected exactly one load balancer to be created here.");
 		
 
-		String loadBalancerArn = result.getLoadBalancers().get(0).getLoadBalancerArn();
+		com.amazonaws.services.elasticloadbalancingv2.model.LoadBalancer balancer = result.getLoadBalancers().get(0);
+		String loadBalancerArn = balancer.getLoadBalancerArn();
+		String domain = balancer.getDNSName();
 		String vpcId = result.getLoadBalancers().get(0).getVpcId();
 		
 		CreateTargetGroupResult targetGroupResult = elb.createTargetGroup(new CreateTargetGroupRequest()
@@ -180,6 +222,11 @@ public class Deploy {
 		
 		
 		//elb.registerTargets(new RegisterTargetsRequest().withTargetGroupArn(targetGroupArn).withTargets(new TargetDescription().withAvailabilityZone("all").withId("WTF")));
+		
+		
+		logger.info("********");
+		logger.info("Congratulations, you have a domain name.  "+domain);
+		logger.info("********");
 		
 		
 		
@@ -227,15 +274,21 @@ public class Deploy {
 					.withLaunchType("FARGATE")
 					.withNetworkConfiguration(networkConfiguration)
 					.withLoadBalancers(balancers)); //I'm not sure how to 
-		}catch(Exception e){
+		}catch(Exception createException){
 			//Assume that the service already exists.  Attempt to update it.
-			logger.log(Level.INFO, "Failed to create service, attempting to update instead.  If this works, you can ignore this error.", e);
-			ecs.updateService(new UpdateServiceRequest()
-					.withCluster(cluster.getClusterName())
-					.withService(applicationName)
-					.withTaskDefinition(task.getTaskDefinitionArn())
-					.withDesiredCount(2)
-					.withNetworkConfiguration(networkConfiguration));
+			logger.info("Failed to create service, attempting to update instead.  If this works, you can ignore this error.");
+			try {
+				ecs.updateService(new UpdateServiceRequest()
+						.withCluster(cluster.getClusterName())
+						.withService(applicationName)
+						.withTaskDefinition(task.getTaskDefinitionArn())
+						.withDesiredCount(2)
+						.withNetworkConfiguration(networkConfiguration));
+			}catch(Exception updateException) {
+				logger.log(Level.WARNING, "trouble creating service", createException);
+				logger.log(Level.SEVERE, "trouble updating service", updateException);
+				
+			}
 		}
 
 	}
