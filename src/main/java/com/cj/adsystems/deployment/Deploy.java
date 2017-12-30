@@ -87,7 +87,7 @@ public class Deploy {
 		Integer MEMORY = 512;
 		Integer CPU = 256;
 		Set<String> VPC_SUBNETS=set("subnet-6f752a45", "subnet-361d1240", "subnet-14154d4c", "subnet-b64d718b", "subnet-d7c941db", "subnet-d5bdddb0");
-		Set<String> VPC_SECURITY_GROUPS = set("sg-a84f08d3");
+		Set<String> VPC_SECURITY_GROUPS = set("sg-8aa662fe");//set("sg-a84f08d3");
 		Integer PORT = 8080;
 		
 		//See the readme for information about these roles
@@ -119,7 +119,7 @@ public class Deploy {
 				new AwsVpcConfiguration()
 					.withSecurityGroups(VPC_SECURITY_GROUPS)
 					.withSubnets(VPC_SUBNETS)
-					.withAssignPublicIp(AssignPublicIp.DISABLED)
+					.withAssignPublicIp(AssignPublicIp.ENABLED) //Crashloops without proper internet NAT set up?
 				);
 		
 		
@@ -150,12 +150,14 @@ public class Deploy {
 	private static String createLoadBalancer(AmazonElasticLoadBalancing elb, String name, Set<String> subnets, Set<String> securityGroups, Integer port) throws InterruptedException {
 		CreateLoadBalancerRequest lbRequest = new CreateLoadBalancerRequest()
 				.withName(name)
-				.withSecurityGroups(securityGroups)
+				.withSecurityGroups(securityGroups) //CRASHLOOP?
 				.withType(LoadBalancerTypeEnum.Application)
-				//.withListeners(new Listener("http", balancer.getContainerPort(), balancer.getContainerPort()))
 				.withSubnets(subnets);
 		
 		CreateLoadBalancerResult result = elb.createLoadBalancer(lbRequest);
+		
+		
+		
 		if(result.getLoadBalancers().size() !=1) throw new RuntimeException("Expected exactly one load balancer to be created here.");
 		
 
