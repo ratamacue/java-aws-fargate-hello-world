@@ -8,8 +8,7 @@ public class Deploy {
 	private static final Logger logger = Logger.getLogger(Deploy.class.getName());
 
 	public static void main(String[] args) throws Exception {
-
-		new Deployer().deploy();
+		new Deployer().deploy(new Deployment());
 	}
 
 

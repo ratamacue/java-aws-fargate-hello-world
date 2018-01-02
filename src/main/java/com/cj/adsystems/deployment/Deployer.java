@@ -70,67 +70,44 @@ public class Deployer {
 	
 	private static final Logger logger = Logger.getLogger(Deployer.class.getName());
 	
-	public void deploy() throws UnsupportedEncodingException, Exception, InterruptedException {
-		/*
-		 * Configuration Options Follow.
-		 * These should be environment variables or args to main.
-		 */
-		Regions AWS_REGION = Regions.US_EAST_1;
-		String CLUSTER_NAME = "ad-systems";
-		String APPLICATION_NAME = "fargate-demo";
-		String ENVIRONMENT_NAME = "lab";
-		File DOCKER_WORKING_DIR = new File(".");
-		String AWS_REGISTRY_ID="727586729164";
-		String DOCKER_TAG = "deploy";
-		Integer MEMORY = 512;
-		Integer CPU = 256;
-		Set<String> VPC_SUBNETS=set("subnet-6f752a45", "subnet-361d1240", "subnet-14154d4c", "subnet-b64d718b", "subnet-d7c941db", "subnet-d5bdddb0");
-		Integer DOCKERPORT = 8080;
-		String roleARN = String.format("arn:aws:iam::%s:role/AdSystemsFargateManagerRole", AWS_REGISTRY_ID);
-		
-
-		/*
-		 * End Configuration Options
-		 */
-
-
-		AmazonECR ecr = AmazonECRClientBuilder.standard().withRegion(AWS_REGION).build();
-		AmazonECS ecs = AmazonECSClientBuilder.standard().withRegion(AWS_REGION).build();
-		AmazonEC2 ec2 = AmazonEC2ClientBuilder.standard().withRegion(AWS_REGION).build();
-		AmazonElasticLoadBalancing elb = AmazonElasticLoadBalancingClientBuilder.standard().withRegion(AWS_REGION).build();
+	public void deploy(Deployment deployment) throws UnsupportedEncodingException, Exception, InterruptedException {
+		AmazonECR ecr = AmazonECRClientBuilder.standard().withRegion(deployment.getRegion()).build();
+		AmazonECS ecs = AmazonECSClientBuilder.standard().withRegion(deployment.getRegion()).build();
+		AmazonEC2 ec2 = AmazonEC2ClientBuilder.standard().withRegion(deployment.getRegion()).build();
+		AmazonElasticLoadBalancing elb = AmazonElasticLoadBalancingClientBuilder.standard().withRegion(deployment.getRegion()).build();
 
 		//https://stackoverflow.com/questions/40099527/pulling-image-from-amazon-ecr-using-docker-java
-		createEcrRepository(ecr, APPLICATION_NAME);
+		createEcrRepository(ecr, deployment.getApplicationName());
 		DockerClient dockerClient = setupDocker(ecr);
-	    String ecrImageName = dockerBuild(dockerClient, DOCKER_WORKING_DIR, AWS_REGISTRY_ID, AWS_REGION, APPLICATION_NAME, DOCKER_TAG);
+	    String ecrImageName = dockerBuild(dockerClient, new File("."), deployment.getAwsRegistryId(), deployment.getRegion(), deployment.getApplicationName(), deployment.getDockerTag());
 		dockerPush(ecrImageName, dockerClient); 
 		
 		
 		//Here's where we begin translating the Fargate guide http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ECS_AWSCLI_Fargate.html
-		Cluster cluster = createCluster(CLUSTER_NAME, ecs);
+		Cluster cluster = createCluster(deployment.getClusterName(), ecs);
 		
-		String securityGroup = createFirewallSecurityGroup(ec2, APPLICATION_NAME);
+		String securityGroup = createFirewallSecurityGroup(ec2, deployment.getApplicationName());
 		
 		
 		//NetworkConfiguration networkConfiguration = createNetworkConfiguration(ec2);
 		NetworkConfiguration networkConfiguration = new NetworkConfiguration().withAwsvpcConfiguration(
 				new AwsVpcConfiguration()
 					.withSecurityGroups(securityGroup)
-					.withSubnets(VPC_SUBNETS)
+					.withSubnets(deployment.getVpcSubnets())
 					.withAssignPublicIp(AssignPublicIp.ENABLED) //Crashloops without proper internet NAT set up?
 				);
 		
 		
-		String targetGroupARN = createLoadBalancer(elb, APPLICATION_NAME, VPC_SUBNETS, securityGroup, DOCKERPORT);
+		String targetGroupARN = createLoadBalancer(elb, deployment.getApplicationName(), deployment.getVpcSubnets(), securityGroup, deployment.getDockerPort());
 
 		LoadBalancer balancer = new LoadBalancer()
-				.withContainerName(APPLICATION_NAME)
+				.withContainerName(deployment.getApplicationName())
 				.withTargetGroupArn(targetGroupARN)
-				.withContainerPort(DOCKERPORT);
+				.withContainerPort(deployment.getDockerPort());
 		
-		TaskDefinition task = registerTask(ecs, roleARN, ecrImageName, APPLICATION_NAME, DOCKERPORT, MEMORY, CPU);
+		TaskDefinition task = registerTask(ecs, deployment.getRoleArn(), ecrImageName, deployment.getApplicationName(), deployment.getDockerPort(), deployment.getMemory(), deployment.getCPU());
 
-		run(ecs, cluster, networkConfiguration, balancer, APPLICATION_NAME, task);
+		run(ecs, cluster, networkConfiguration, balancer, deployment.getApplicationName(), task);
 		
 	    logger.info("Complete.");
 	}
