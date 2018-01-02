@@ -5,15 +5,29 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.MissingOptionException;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
 
 import com.amazonaws.regions.Regions;
 import com.cj.adsystems.deployment.fargate.Deployment;
-import com.cj.adsystems.deployment.fargate.Deployment;
 
 public class DeploymentImpl implements Deployment{
+	private Regions region = Regions.US_EAST_1; //Fargate requires US_EAST_1 for now.
+	public static final String CLUSTERNAME="clustername";
 	
-	private Regions AWS_REGION = Regions.US_EAST_1;
-	private String CLUSTER_NAME = "ad-systems";
+	
+	private Options options = new Options()
+			//.addOption("region", true, "AWS Region"); //Only US_EAST_1 is supported for fargate currently.
+			//.addOption( "help", "print this message" ) //Messing it up prints the help.  Good enough :)
+			.addRequiredOption(CLUSTERNAME, CLUSTERNAME, true, "The name of this cluster.");
+	
+	
+	/*
+	 * Remove these and replace with string constants that tie to opts above.
+	 */
 	private String APPLICATION_NAME = "fargate-demo";
 	private String ENVIRONMENT_NAME = "lab";
 	private String AWS_REGISTRY_ID="727586729164";
@@ -24,86 +38,65 @@ public class DeploymentImpl implements Deployment{
 	private Integer DOCKERPORT = 8080;
 	private String roleARN = String.format("arn:aws:iam::%s:role/AdSystemsFargateManagerRole", AWS_REGISTRY_ID);
 	private CommandLine opts;
+	/*
+	 * End remove these
+	 */
 	
-	public DeploymentImpl(CommandLine opts) {
-		this.opts = opts;
+	
+	public DeploymentImpl(String[] args) throws ParseException {
+		try {
+			this.opts = new DefaultParser().parse(options, args);
+		}catch(MissingOptionException e) {
+			new HelpFormatter().printHelp( "./deploy.sh", options );
+			throw e;
+		}
 	}
 	
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getRegion()
-	 */
 	@Override
 	public Regions getRegion() {
-		return AWS_REGION;
+		return region;
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getClusterName()
-	 */
 	@Override
 	public String getClusterName() {
-		return CLUSTER_NAME;
+		return opts.getOptionValue("clustername");
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getApplicationName()
-	 */
 	@Override
 	public String getApplicationName() {
 		return APPLICATION_NAME;
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getAwsRegistryId()
-	 */
 	@Override
 	public String getAwsRegistryId() {
 		return AWS_REGISTRY_ID;
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getDockerTag()
-	 */
 	@Override
 	public String getDockerTag() {
 		return DOCKER_TAG;
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getMemory()
-	 */
 	@Override
 	public Integer getMemory() {
 		return MEMORY;
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getCPU()
-	 */
 	@Override
 	public Integer getCPU() {
 		return CPU;
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getVpcSubnets()
-	 */
 	@Override
 	public Set<String> getVpcSubnets() {
 		return VPC_SUBNETS;
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getDockerPort()
-	 */
 	@Override
 	public Integer getDockerPort() {
 		return DOCKERPORT;
 	}
 
-	/* (non-Javadoc)
-	 * @see com.davidron.fargatedemo.Deployment2#getRoleArn()
-	 */
 	@Override
 	public String getRoleArn() {
 		return roleARN;
