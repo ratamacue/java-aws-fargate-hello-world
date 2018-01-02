@@ -107,7 +107,7 @@ public class Deployer {
 		
 		TaskDefinition task = registerTask(ecs, deployment.getRoleArn(), ecrImageName, deployment.getApplicationName(), deployment.getDockerPort(), deployment.getMemory(), deployment.getCPU());
 
-		run(ecs, cluster, networkConfiguration, balancer, deployment.getApplicationName(), task);
+		fargate(ecs, cluster, networkConfiguration, balancer, deployment.getApplicationName(), task);
 		
 	    logger.info("Complete.");
 	}
@@ -124,7 +124,6 @@ public class Deployer {
 			if(groups.size()!=1) throw new RuntimeException("Error finding security group "+securityGroupName);
 			groupId=groups.get(0).getGroupId();
 		}
-		
 		
 		try{
 			ec2.authorizeSecurityGroupEgress(new AuthorizeSecurityGroupEgressRequest().withIpPermissions(new IpPermission().withIpProtocol("-1")).withGroupId(groupId));		
@@ -179,9 +178,7 @@ public class Deployer {
 	}
 
 
-	private static void run(AmazonECS ecs, Cluster cluster, NetworkConfiguration networkConfiguration, LoadBalancer balancers, String applicationName, TaskDefinition task) {
-		
-
+	private static void fargate(AmazonECS ecs, Cluster cluster, NetworkConfiguration networkConfiguration, LoadBalancer balancers, String applicationName, TaskDefinition task) {
 		try {
 			ecs.createService(new CreateServiceRequest()
 					.withCluster(cluster.getClusterName())
@@ -206,9 +203,7 @@ public class Deployer {
 				logger.log(Level.SEVERE, "trouble updating service", updateException);
 			}
 		}
-
 	}
-
 
 	private static TaskDefinition registerTask(AmazonECS ecs, String roleArn, String ecrImageName,
 			String applicationName, Integer port, Integer memory, Integer cpu) {
@@ -229,17 +224,14 @@ public class Deployer {
 		return task;
 	}
 
-
 	private static Cluster createCluster(String clusterName, AmazonECS ecs) {
 		CreateClusterRequest request = new CreateClusterRequest().withClusterName(clusterName);
 		return ecs.createCluster(request).getCluster();
 	}
 
-
 	private static void dockerPush(String ecrImageName, DockerClient dockerClient) throws Exception {
 	    dockerClient.pushImageCmd(Identifier.fromCompoundString(ecrImageName)).withAuthConfig(dockerClient.authConfig()).exec(new PushImageResultCallback()).awaitSuccess();
 	}
-
 
 	private static String dockerBuild(DockerClient dockerClient, File workingFolder, String awsAccountNumber, Regions region, String applicationName, String dockerTag) {
 		String ecrImageName = String.format("%s.dkr.ecr.%s.amazonaws.com/%s:%s", awsAccountNumber, region.getName(), applicationName, dockerTag);
@@ -265,7 +257,6 @@ public class Deployer {
 	    String userPassword = new String(Base64.decode(authData.getAuthorizationToken()), "UTF-8");
 	    String user = userPassword.substring(0, userPassword.indexOf(":"));
 	    String password = userPassword.substring(userPassword.indexOf(":")+1);
-
 
 	    DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
 		    .withDockerHost("unix:///var/run/docker.sock")
@@ -301,5 +292,4 @@ public class Deployer {
 	private static <T> Set<T> set(T... elements){
 		return Stream.of(elements).collect(Collectors.toSet());
 	}
-
 }

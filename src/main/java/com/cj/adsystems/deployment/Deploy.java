@@ -10,7 +10,4 @@ public class Deploy {
 	public static void main(String[] args) throws Exception {
 		new Deployer().deploy(new Deployment());
 	}
-
-
-	
 }
