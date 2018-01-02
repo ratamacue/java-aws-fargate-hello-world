@@ -1,4 +1,4 @@
-package com.cj.adsystems.deployment;
+package com.cj.adsystems.deployment.fargate;
 
 import java.io.File;
 import java.io.UnsupportedEncodingException;
