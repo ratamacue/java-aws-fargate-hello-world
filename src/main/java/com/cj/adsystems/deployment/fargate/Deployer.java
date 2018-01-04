@@ -82,12 +82,10 @@ public class Deployer {
 	    String ecrImageName = dockerBuild(dockerClient, new File("."), deployment.getAwsRegistryId(), deployment.getRegion(), deployment.getApplicationName(), deployment.getDockerTag());
 		dockerPush(ecrImageName, dockerClient); 
 		
-		
 		//Here's where we begin translating the Fargate guide http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ECS_AWSCLI_Fargate.html
 		Cluster cluster = createCluster(deployment.getClusterName(), ecs);
 		
 		String securityGroup = createFirewallSecurityGroup(ec2, deployment.getApplicationName());
-		
 		
 		//NetworkConfiguration networkConfiguration = createNetworkConfiguration(ec2);
 		NetworkConfiguration networkConfiguration = new NetworkConfiguration().withAwsvpcConfiguration(
@@ -96,7 +94,6 @@ public class Deployer {
 					.withSubnets(deployment.getVpcSubnets())
 					.withAssignPublicIp(AssignPublicIp.ENABLED) //Crashloops without proper internet NAT set up?
 				);
-		
 		
 		String targetGroupARN = createLoadBalancer(elb, deployment.getApplicationName(), deployment.getVpcSubnets(), securityGroup, deployment.getDockerPort());
 

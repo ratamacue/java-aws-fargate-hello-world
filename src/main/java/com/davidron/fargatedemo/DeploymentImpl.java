@@ -1,8 +1,8 @@
 package com.davidron.fargatedemo;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
@@ -15,33 +15,32 @@ import com.amazonaws.regions.Regions;
 import com.cj.adsystems.deployment.fargate.Deployment;
 
 public class DeploymentImpl implements Deployment{
-	private Regions region = Regions.US_EAST_1; //Fargate requires US_EAST_1 for now.
+	private static final String DOCKER_PORT = "dockerport";
+	private static final String CPU = "cpu";
+	private static final String MEMORY = "memory";
+	public static final String DOCKER_TAG = "dockertag";
+	public static final String ROLE_ARN = "rolearn";
+	public static final String AWS_ID = "awsid";
+	public static final String APP_NAME = "appname";
 	public static final String CLUSTERNAME="clustername";
-	
-	
+	private static final String SUBNETS = "subnets";
+	private Regions region = Regions.US_EAST_1; //Fargate requires US_EAST_1 for now.
+	private String ENVIRONMENT_NAME = "lab"; //Support for this needs to be added maybe?  Or maybe just allow people to use clustername and app name.
+
 	private Options options = new Options()
 			//.addOption("region", true, "AWS Region"); //Only US_EAST_1 is supported for fargate currently.
 			//.addOption( "help", "print this message" ) //Messing it up prints the help.  Good enough :)
-			.addRequiredOption(CLUSTERNAME, CLUSTERNAME, true, "The name of this cluster.");
-	
-	
-	/*
-	 * Remove these and replace with string constants that tie to opts above.
-	 */
-	private String APPLICATION_NAME = "fargate-demo";
-	private String ENVIRONMENT_NAME = "lab";
-	private String AWS_REGISTRY_ID="727586729164";
-	private String DOCKER_TAG = "deploy";
-	private Integer MEMORY = 512;
-	private Integer CPU = 256;
-	private Set<String> VPC_SUBNETS=Stream.of("subnet-6f752a45", "subnet-361d1240", "subnet-14154d4c", "subnet-b64d718b", "subnet-d7c941db", "subnet-d5bdddb0").collect(Collectors.toSet());
-	private Integer DOCKERPORT = 8080;
-	private String roleARN = String.format("arn:aws:iam::%s:role/AdSystemsFargateManagerRole", AWS_REGISTRY_ID);
+			.addRequiredOption(CLUSTERNAME, CLUSTERNAME, true, "The name of this cluster.")
+			.addRequiredOption(APP_NAME, APP_NAME, true, "Name of this application.")
+			.addRequiredOption(AWS_ID, AWS_ID, true, "The AWS ID you use to log in (probably 12 numbers)")
+			.addRequiredOption(ROLE_ARN, ROLE_ARN, true, "AWS Role Arn.  Should look like \"arn:aws:iam::123456123456:role/role-name\"")
+			.addRequiredOption(DOCKER_TAG, DOCKER_TAG, true, "What tag we use for the Docker image")
+			.addRequiredOption(MEMORY, MEMORY, true, "The upper limit of how much RAM this application consumes")
+			.addRequiredOption(CPU, CPU, true, "The upper limit of how much CPU this application consumes.  See the AWS documentation on a \"Task Definition\"")
+			.addRequiredOption(SUBNETS, SUBNETS, true, "Comma-separated list of VPC Subnets.  Example: \"subnet-6f752a45,subnet-361d1240\"")
+			.addRequiredOption(DOCKER_PORT, DOCKER_PORT, true, "The port defined in the dockerfile");
+				
 	private CommandLine opts;
-	/*
-	 * End remove these
-	 */
-	
 	
 	public DeploymentImpl(String[] args) throws ParseException {
 		try {
@@ -64,43 +63,57 @@ public class DeploymentImpl implements Deployment{
 
 	@Override
 	public String getApplicationName() {
-		return APPLICATION_NAME;
+		return opts.getOptionValue(APP_NAME);
 	}
 
 	@Override
 	public String getAwsRegistryId() {
-		return AWS_REGISTRY_ID;
+		return opts.getOptionValue(AWS_ID);
 	}
 
 	@Override
 	public String getDockerTag() {
-		return DOCKER_TAG;
+		return opts.getOptionValue(DOCKER_TAG);
 	}
 
 	@Override
 	public Integer getMemory() {
-		return MEMORY;
+		try{
+			return Integer.parseInt(opts.getOptionValue(MEMORY));
+		}catch (Exception e) {
+			
+			throw new RuntimeException("Trouble parsing integer memory value of "+opts.getOptionValue(MEMORY), e);
+		}
 	}
 
 	@Override
 	public Integer getCPU() {
-		return CPU;
+		try{
+			return Integer.parseInt(opts.getOptionValue(CPU));
+		}catch (Exception e) {
+			
+			throw new RuntimeException("Trouble parsing integer cpu value of "+opts.getOptionValue(CPU), e);
+		}
 	}
 
 	@Override
 	public Set<String> getVpcSubnets() {
-		return VPC_SUBNETS;
+		return new HashSet<>(Arrays.asList(opts.getOptionValues(SUBNETS)));
 	}
 
 	@Override
 	public Integer getDockerPort() {
-		return DOCKERPORT;
+		try{
+			return Integer.parseInt(opts.getOptionValue(DOCKER_PORT));
+		}catch (Exception e) {
+			
+			throw new RuntimeException("Trouble parsing integer dockerport value of "+opts.getOptionValue(DOCKER_PORT), e);
+		}
 	}
 
 	@Override
 	public String getRoleArn() {
-		return roleARN;
+		return opts.getOptionValue(ROLE_ARN);
 	}
 	
-
 }
